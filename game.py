@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 
 import csv
 import random
 import threading
 import time
+import math
 
 class Block(object): #ブロックのクラス
     def __init__(self,x,y,xlength,ylength,stock):
@@ -29,62 +30,94 @@ class Item(object): #アイテムのクラス
         self.exist = False
 
 def map_setup(): #ブロックとアイテムのcsvからマップを生成する函数
-    file_dir = 'C:\document\map'
-    difficulty = raw_input('Please input difficulty.\n')
-    file_dir = file_dir + '\block_' + difficulty + '.csv'
+    block_id = 0
+    item_id = 0
+    file_dir = 'C:\python27'
+    difficulty = str(raw_input('Please input difficulty (easy or hard) .\n'))
+    file_dir ='_block_' + difficulty + '.csv'
     fh1 = open(file_dir,'rb')
     reader1 = csv.reader(fh1)
-    lst_block = []
+    dict_block = {}
     for i in reader1:
-        tmp = Block(i[0],i[1],i[2],i[3],i[4])
-        lst_block.append(tmp)
+        i = map(float,i)
+        tmp1 = Block(i[0],i[1],i[2],i[3],int(i[4]))
+        dict_block[block_id] = tmp1
+        block_id += 1
     fh1.close()
-    file_dir = file_dir + '\item_' + difficulty + '.csv'
+    file_dir ='_item_' + difficulty + '.csv'
     fh2 = open(file_dir,'rb')
     reader2 = csv.reader(fh2)
-    lst_item = []
+    dict_item = {}
     for i in reader2:
-        tmp = Item(i[0],i[1])
-        lst_item.append(tmp)
+        i = map(float,i)
+        tmp2 = Item(i[0],i[1])
+        dict_item[item_id] = tmp2
+        item_id += 1
     fh2.close()
-    return lst_block,lst_item
+    return dict_block,dict_item,block_id,item_id
 
 def first_vector(): #初期ベクトルを生成する函数
-    vector = [random.random()*45.0+45.0,(random.random()-0.5)*180.0]
+    arg = (random.random()*90.0 + 45.0)*math.pi
+    vector = [math.cos(arg),math.sin(arg)]
     return vector
 
-def hit_judge(position,block_lst): #ブロックに当たったかどうかを判定する関数
-    return True
+def collision(ph_position,dict_block): #当たり判定函数
+    phex,phey = ph_position[0],ph_position[1]
+    phesizex,phesizey = 15,15 #フェノックス当たり判定範囲(奥行き方向[cm],左右方向)
+    answer = []
+    for i in dict_block:
+        block = dict_block[i]
+        posx = block.x
+        posy = block.y
+        sizex = block.xlength
+        sizey = block.ylength
+        distx = abs(posx-phex)
+        disty = abs(posy-phey)
+        sizesumx = sizex/2.0+phesizex/2.0
+        sizesumy = sizey/2.0+phesizey/2.0
+        if (distx<=sizesumx):
+            if (disty<=sizesumy):
+                bt = posx-sizex/2.0
+                br = posy+sizey/2.0
+                bb = posx+sizex/2.0
+                bl = posy-sizey/2.0
+                pt = phex-phesizex/2.0
+                pr = phey+phesizey/2.0
+                pb = phex+phesizex/2.0
+                pl = phey-phesizey/2.0
+                cx = 0.
+                cy = 0.
+                if pl<bl<pr<br:
+					cy -= 1.
+                if bl<pl<br<pr:
+					cy += 1.
+                if pt<bt<pb<bb:
+					cx += 1.
+                if bt<pt<bb<pb:
+					cx -= 1.
+                answer.append((i,(cx,cy))) #ブロックのID,法線ベクトル
+    return answer
 
-def is_exist(block_lst): #ブロックがまだあるかどうか判定する函数
+"""
+def is_exist(block_dict): #ブロックがまだあるかどうか判定する函数
     judge = False
     for i in xrange(len(block_lst)):
         judge = judge or block_lst[i].exist
     return judge
+"""
 
 def gameover_judge(position): #ゲームオーバーかどうかを判別する函数
-    if position[0] > 300.0: #x座標が300以上でゲームオーバー
+    if position[1] < -10.0: #y座標が-10以下でゲームオーバー
         return True
     else:
         return False
-
-def append_block(data,block_lst): #ブロックを追加する函数
-    tmp = Block(data[0],data[1],data[2],data[3],data[4])
-    block_lst.append(tmp)
-
-def append_item(data,item_lst): #アイテムを追加する函数
-    tmp = Item(data[0],data[1])
-    item_lst.append(tmp)
-
-def func_communication(): #通信スレッド用の函数
-    pass
 
 class Timer_thread(threading.Thread): #タイマースレッドのクラス
     def __init__(self):
         super(Timer_thread,self).__init__()
         self.timeup = False
     def run(self):
-        time.sleep(300.0) #制限時間は300秒
+        time.sleep(150.0) #制限時間
         self.timeup = True
 
 class Communication_thread(threading.Thread): #通信スレッドのクラス
@@ -93,7 +126,11 @@ class Communication_thread(threading.Thread): #通信スレッドのクラス
         self.receive = [] #メインスレッドが受信するコマンドを格納
         self.send = [] #メインスレッドが送信するコマンドを格納
     def run(self):
-        func_communication()
+        while True:
+            if len(self.send) > 0:
+                send_command = self.send[0]
+                del self.send[0]
+                print send_command
 
 class Item_thread(threading.Thread): #アイテムを取った時にその持続時間を計っておくスレッド
     def __init__(self):
@@ -103,44 +140,80 @@ class Item_thread(threading.Thread): #アイテムを取った時にその持続
         time.sleep(20.0) #アイテムの持続時間
         self.ready = False #スレッドが待機状態でない(アイテムを取り終わった後)
 
+class Simulator(threading.Thread): #シミュレーター用スレッド
+    def __init__(self):
+        super(Simulator,self).__init__()
+        self.vector = [0.0,0.0] #方向ベクトル
+        self.position = [50.0,50.0] #座標
+        self.speed = 30.0 #速度[cm/s]
+        self.dlt = 0.033
+    def run(self):
+        while True:
+            self.position[0] = self.position[0] + self.vector[0]*self.speed*self.dlt
+            self.position[1] = self.position[1] + self.vector[1]*self.speed*self.dlt
+            if self.position[0] < 0.0 or self.position[0] > 350.0: #x座標が枠に当たった
+                self.vector[0] = self.vector[0]*-1.0
+            elif self.position[1] < 0.0 or self.position[1] >250.0: #y座標が枠に当たった
+                self.vector[1] = self.vector[1]*-1.0
+            thread_Communication.receive.append((0,(self.position,self.vector))) #座標と速度送信
+            time.sleep(self.dlt)
+
 if __name__ == '__main__':
     thread_Communication = Communication_thread()
     thread_Timer = Timer_thread()
     thread_Item = Item_thread()
-    block_lst,item_lst = map_setup()
+    simulator = Simulator()
+    thread_Communication.setDaemon(True) #メインが終わったら終了するようにdaemonにしておく
+    thread_Timer.setDaemon(True)
+    thread_Item.setDaemon(True)
+    simulator.setDaemon(True)
+    block_dict,item_dict,block_id,item_id = map_setup()
     initial_vector = first_vector()
-    #ここにマップデータと初期ベクトルの送信プログラムが入る
-    thread_Communication.start() #スレッド開始
+    thread_Communication.start() #通信開始
+    thread_Communication.send.append((0,10,block_dict)) #マップ情報送信
+    thread_Communication.send.append((1,1,None)) #Phenoxを離陸させる
+    thread_Communication.send.append((1,0,initial_vector))
+    simulator.vector = initial_vector
+    simulator.start()
     thread_Timer.start()
-    while True(): #メインループ
+    while True: #メインループ
         if thread_Timer.timeup == True: #タイムアップの時
-            send_command = (6,None)
-            thread_Communication.send.append(send_command)
+            thread_Communication.send.append((0,9,None))
             break
         if thread_Item.ready == False: #アイテムの持続時間が終わったとき
-            thread_Item.join()
-            send_command = (2,False)
-            thread_Communication.send.append(send_command)
+            thread_Communication.send.append((0,4,None))
             thread_Item = Item_thread() #アイテムのスレッドを待機状態にしておく
         elif len(thread_Communication.receive) > 0: #コマンドが送られてきているとき
             receive_command = thread_Communication.receive[0]
             del thread_Communication.receive[0] #コマンドを受け取って消す
-            if receive_command[0] == 1: #座標が送られてきたとき
-                position = receive_command[1]
-                if hit_judge(position,block_lst) != False: #当たっていた場合法線ベクトルを送信し、クリア判定
-                    if is_exist(block_lst) == False: #クリアの場合(ブロックが全部消された)
-                        send_command = (4,None)
-                        thread_Communication.send.append(send_command)
+            if receive_command[0] == 0: #座標が送られてきたとき
+                position,vector = receive_command[1][0],receive_command[1][1]
+                thread_Communication.send.append((0,0,position))
+                answer = collision(position,block_dict)
+                if len(answer) > 0: #当たっていた場合法線ベクトルを送信し、クリア判定
+                    thread_Communication.send.append((1,0,answer[0][1]))
+                    thread_Communication.send.append((0,1,None))
+                    if answer[0][1][0] == 0.0: #法線ベクトルがy方向
+                        simulator.vector[1] = simulator.vector[1]*-1.0
+                    else:
+                        simulator.vector[0] = simulator.vector[0]*-1.0
+                    for i in answer: #ブロックを消す
+                        del block_dict[i[0]]
+                    if len(block_dict) == 0: #クリアの場合
+                        thread_Communication.send.append((0,7,None))
                         break
                 elif gameover_judge(position) == True: #ゲームオーバーの時
-                    send_command = (5,None)
-                    thread_Communication.send.append(send_command)
+                    thread_Communication.send.append((0,8,None))
                     break
-            elif receive_command[0] == 2: #ブロックの追加命令が送られてきたとき
-                append_block(receive_command[1],block_lst)
-                send_command = (3,(block_lst,item_lst)) #マップ情報送信
-                thread_Communication.send.append(send_command)
-            elif receive_command[0] == 3: #アイテムの追加命令が送られてきたとき
-                append_item(receive_command[1],item_lst)
-                send_command = (3,(block_lst,item_lst)) #マップ情報送信
-                thread_Communication.send.append(send_command)
+            elif receive_command[0] == 1: #ブロックの追加命令が送られてきたとき
+                append_block = receive_command[1]
+                block_dict[block_id] = append_block
+                block_id += 1
+                thread_Communication.send.append((0,3,append_block))
+            elif receive_command[0] == 2: #アイテムの追加命令が送られてきたとき
+                append_item = receive_command[1]
+                item_dict[item_id] = append_item
+                item_id += 1
+                thread_Communication.send.append((0,4,append_item))
+    thread_Communication.send = [(1,0,(0.,0.)),(1,1,None)] #ゲームが終了したらPhenoxを着陸させる
+    time.sleep(1.0) #コマンド送信のために少し待機
