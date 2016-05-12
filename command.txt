@@ -1,25 +1,32 @@
 メイン－通信スレッド間コマンド表
 メイン→通信スレッド
-(送り先,指令番号,データ)のタプルで送信
-メイン→Client(0)
-0:Phenoxの座標……(0,0,座標)←毎回送る
-1:Phenoxの反射……(0,1,None)
-2:ブロック破壊……(0,2,ブロック番号)
-3:アイテム取得……(0,3,アイテム番号)
-4:アイテム持続時間終了……(0,4,None)
-5:ブロック追加……(0,5,ブロックデータ)
-6:アイテム追加……(0,6,アイテムデータ)
-7:ゲームクリア……(0,7,None)
-8:ゲームオーバー……(0,8,None)
-9:タイムアップ……(0,9,None)
-10:マップリスト送信……(0,10,マップデータ)←5秒に1回ぐらい送る
+メイン→Client
+イベント:説明……データ[型]
+'px_position':Phenoxの座標……(x座標[float],y座標)[tuple]
+'bar_position':反射バーの位置……x座標[float]
+'reflect':Phenoxの反射……None
+'hit':ブロック破壊……ブロック番号[int]
+'complete':ゲームクリア……None
+'gameover':ゲームオーバー……None
+'timeup':タイムアップ……None
+'map':マップリスト送信……{id[int]:(x,y,xlength,ylength,(r,g,b))} ←5秒に1回ぐらい送る
 
-メイン→Phenox(1)
-0:方向ベクトル送信……(1,0,方向ベクトル)
-1:着陸命令……(1,1,None)
-2:離陸命令……(1,2,None)
+メイン→Phenox
+'direction':方向ベクトル送信……(方向ベクトル[float])[tuple]
+'landing':着陸命令……True
 
-通信スレッド→メイン
-0:Phenoxの座標……(0,座標)
-1:ブロック追加……(1,ブロックデータ)
-2:アイテム追加……(2,アイテムデータ)
+通信スレッド→メインスレッド
+'px_position':Phenoxの座標……(x,y)[float]
+'px_velocity':Phenoxの速度……(x,y)[float]
+'px_start':Phenoxの飛行開始……bool
+'px_bounce':Phenoxの反射……bool
+'controller':コントローラの傾き……float
+
+(Traceback (most recent call last):
+'  File "game_ver2.py", line 233, in <module>
+px_position'    , answer_bar = bounce(bar,velocity,position)
+[  File "game_ver2.py", line 118, in bounce
+'Client'    ]return answer
+, UnboundLocalError[: 314.8302635427239l, ocal variable 'answer' referenced befo
+re assignment8.408291591128474
+])
