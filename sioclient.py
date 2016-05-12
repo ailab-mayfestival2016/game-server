@@ -6,12 +6,18 @@ class SioClient:
 	def __init__(self):
 		self.client=sio.Client()
 		self.queue={}
-	def start(self,uri):
+	def start(self,uri,waitUntilConnected=False):
 		self.client.set_close_listener(self.onOpen)
 		self.client.set_socket_open_listener(self.onSocketOpen)
 		self.client.set_socket_close_listener(self.onSocketClose)
 		self.client.set_close_listener(self.onClose)
 		self.client.connect(uri)
+		if(waitUntilConnected):
+			while(not self.isConnected()):
+				import time
+				time.sleep(0.03)
+	def isConnected(self):
+		return self.client.opened()
 	def onOpen(self):
 		pass
 	def onFail(self):
@@ -55,6 +61,4 @@ class SioClient:
 				'room':dstRooms,
 				'data':data
 			})
-	
-
 
