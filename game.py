@@ -57,7 +57,7 @@ def map_setup(): #ブロックとアイテムのcsvからマップを生成す�
     return dict_block,dict_item,block_id,item_id
 
 def first_vector(): #初期ベクトルを生成する函数
-    arg = (random.random()*90.0 + 45.0)*math.pi
+    arg = (random.random()*90.0 + 45.0)*math.pi/180.0
     vector = [math.cos(arg),math.sin(arg)]
     return vector
 
@@ -215,5 +215,6 @@ if __name__ == '__main__':
                 item_dict[item_id] = append_item
                 item_id += 1
                 thread_Communication.send.append((0,4,append_item))
+    time.sleep(0.1)
     thread_Communication.send = [(1,0,(0.,0.)),(1,1,None)] #ゲームが終了したらPhenoxを着陸させる
-    time.sleep(1.0) #コマンド送信のために少し待機
+    time.sleep(0.5) #コマンド送信のために少し待機
