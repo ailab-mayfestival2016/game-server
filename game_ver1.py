@@ -7,8 +7,6 @@ import time
 import math
 from sioclient import SioClient
 
-#フィールドは-200<=x<=200,
-
 class Block(object):  #ブロックのクラス
     def __init__(self,x,y,xlength,ylength):
         self.x = x #x座標
@@ -23,23 +21,28 @@ class Block(object):  #ブロックのクラス
 class Controller(object):
     def __init__(self):
         self.width = 60.0 #バーの幅[cm]
-        self.position = 0.0 #バーの位置(x座標)[cm]
-        self.position_old = 0.0 #1つ前のバーの位置
+        self.position = 100.0 #バーの位置(x座標)[cm]
         self.velocity = 0.0 #バーの移動速度[cm/s]
         self.time = time.time()
-    def calculate(self,position): #コントローラーの傾きのデータ(-1～1)からバーの位置と速度を計算する
-    	self.position_old = self.position
-    	self.position = position
-        time_old = self.time #経過時間を計算
-        self.time = time.time()
-        dlt = max(self.time - time_old,0.001)
-        tmp = (self.position - self.position_old)/dlt
-        self.velocity = tmp
+    def calculate(self,slope): #コントローラーの傾きのデータ(-1～1)からバーの位置と速度を計算する
+        global send_all
+        if slope != None: #データが来ているときは速度を更新
+            self.velocity = slope*150.0 #最大150cm/s
+            time_old = self.time #経過時間を計算
+            self.time = time.time()
+            tmp = self.position + self.velocity*(self.time-time_old)
+        if tmp < self.width/2.0: #左端
+            tmp = self.width/2.0
+        elif tmp > 300.0 - self.width/2.0: #右端
+            tmp = 300.0 - self.width/2.0
+        self.position = tmp
+        send_all.append(('bar_position',['Client'],tmp))
 
-def map_setup(difficulty='easy'): #ブロックとアイテムのcsvからマップを生成する函数
+def map_setup(): #ブロックとアイテムのcsvからマップを生成する函数
     block_id = 0
     color_lst = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255),(255,0,255)] #RGB256段階
     file_dir = 'C:\python27'
+    difficulty = str(raw_input('Please input difficulty (easy or hard) .\n'))
     file_dir ='_block_' + difficulty + '.csv'
     fh1 = open(file_dir,'rb')
     reader1 = csv.reader(fh1)
@@ -109,7 +112,7 @@ def bounce(bar,vector,position): #バーの当たり判定函数
             theta = math.atan(vpx/vpy)
             limit = max(abs(theta),math.pi/4.0)
             k = math.pi/4.0
-            thetap = theta - k*bar.velocity/1000.0
+            thetap = theta - k*bar.velocity
             if thetap >= limit:
                 thetap = limit
             if thetap <= -limit:
@@ -170,7 +173,7 @@ class Communication_thread(threading.Thread): #通信スレッドのクラス
         super(Communication_thread,self).__init__()
         self.loop = True #ループをするかどうかを示すbool値
     def run(self):
-        global receive_controller,send_all,bar,client
+        global receive_controller,send_all,bar
         while self.loop: #通信のループ
             while(len(receive_controller)>0): #コントローラからのデータがあるとき
                 data = receive_controller[0][1]
@@ -186,68 +189,47 @@ if __name__ == '__main__':
     receive_controller = [] #コントローラから受信したデータを格納
     receive_other = [] #コントローラ以外からのデータを格納
     send_all = [] #送信するデータを格納
+    block_dict,block_id = map_setup()
     velocity = first_vector() #Phenoxの速度ベクトルを保持
-    bar = Controller() #バーのインスタンス生成(これ以降コントローラーのデータ受信可)
-    count = 0 #ブロックを壊した個数をカウント
+    bar = Controller()
     thread_Timer = Timer_thread()
     thread_Timer.setDaemon(True)
     thread_Communication = Communication_thread() #通信開始
-    #simulator = Simulator()
+    simulator = Simulator()
     #thread_Communication.setDaemon(True) #メインが終わったら終了するようにdaemonにしておく
-    #simulator.setDaemon(True)
+    simulator.setDaemon(True)
     client = SioClient()
-    event_lst = ['px_position','px_velocity','px_start','px_bounce','bar_position','opening','abort','difficulty'] #受信するイベントの一覧
+    event_lst = ['px_position','px_velocity','px_start','px_bounce','controller'] #受信するイベントの一覧
     client.setEventList(event_lst)
     client.setMyRoom('Game')
-    client.setDataQueue(receive_controller,['bar_position'])
+    client.setDataQueue(receive_controller,['controller'])
     client.setDataQueue(receive_other)
     client.start('http://192.168.1.58:8000',True) #通信開始
-    client.sendData('bar_width',['Controller'],bar.width)
-    event = 'hoge'
-    while True: #openingが終了するまで待つ
-        while(len(receive_other)>0):
-            event = receive_other[0][0]
-            del receive_other[0]
-            if event == 'opening':
-                break
-        if event == 'opening':
-            break
-    print 'receive opening'
-    difficulty = 'easy'
-    while True: #難易度が送られてくるまで待つ
-        while(len(receive_other)>0):
-            event = receive_other[0][0]
-            difficulty = receive_other[0][1]
-            del receive_other[0]
-            if event == 'difficulty':
-                break
-        if event == 'difficulty':
-            break
-    print 'receive difficulty'
-    block_dict,block_id = map_setup()
     tmp = to_send_map(block_dict)
     client.sendData('map',['Client'],tmp) #マップ情報送信
     #thread_Communication.client.sendData('takeoff',['Phenox'],None) #Phenoxを離陸させる
+    event = 'hoge'
+    """
     while True: #Phenoxの離陸を待つ
+        #time.sleep(1.0)
         while(len(receive_other)>0):
             event = receive_other[0][0]
+            print event
             del receive_other[0]
             if event == 'px_start':
                 break
         if event == 'px_start':
             break
-    print 'receive px_start'
+            """
     client.sendData('direction',['Phenox'],velocity) #初期ベクトル送信
     time.sleep(0.05)
-    #simulator.vector = list(velocity)
-    #simulator.start()
+    simulator.vector = list(velocity)
+    simulator.start()
     thread_Communication.start() #通信ループ開始
     thread_Timer.start()
-    del receive_other[:] #初期化
     while True: #メインループ
         if thread_Timer.timeup == True: #タイムアップの時
-            send_all.append(('timeup',['Client'],count))
-            print 'timeup'
+            send_all.append(('timeup',['Client'],None))
             break
         elif len(receive_other) > 0: #コマンドが送られてきているとき
             receive_command = receive_other[0] #コマンドを受け取って消す
@@ -261,32 +243,26 @@ if __name__ == '__main__':
                     send_all.append(('direction',['Phenox'],answer_block[1]))
                     send_all.append(('reflect',['Client'],None))
                     velocity = answer_block[1]
-                    #simulator.vector = list(velocity)
+                    simulator.vector = list(velocity)
                     for i in answer_block[0]: #ブロックを消す
                         send_all.append(('hit',['Client'],i))
-                        count += 1 #ブロックを壊した個数を増やす
                         print 'hit',i
                         del block_dict[i]
                     if len(block_dict) == 0: #クリアの場合
-                        send_all.append(('complete',['Client'],count))
-                        print 'complete'
+                        send_all.append(('complete',['Client'],None))
                         break
                 elif answer_bar != None: #バーに当たった場合
                     send_all.append(('direction',['Phenox'],answer_bar))
-                elif gameover_judge(position) == True: #ゲームオーバーの時
-                    send_all.append(('gameover',['Client'],count))
-                    print 'gameover'
-                    break
+                #elif gameover_judge(position) == True: #ゲームオーバーの時
+                    #send_all.append(('gameover',['Client'],None))
+                    #break
             elif receive_command[0] == 'px_velocity': #Phenoxの速度ベクトルが送られてきたとき
                 velocity = receive_command[1]
             elif receive_command[0] == 'px_bounce': #Phenoxが反射したとき
                 send_all.append(('reflect',['Client'],None))
                 print 'recieve',receive_command
-            elif receive_command[0] == 'px_start': #Phenoxが緊急着陸したとき
+            elif receive_command[0] == 'px_start':
                 break
-            elif receive_command[0] == 'abort': #緊急停止命令が送られてきたとき
-				send_all.append(('landing',['Phenox'],True)) #Phenoxを着陸させる
-				break
     time.sleep(0.15) #コマンド送信のために少し待機
     thread_Communication.loop = False #通信ループ終了
     thread_Communication.join() #ループ終了まで待つ
