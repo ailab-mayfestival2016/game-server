@@ -7,7 +7,7 @@ import time
 import math
 from sioclient import SioClient
 
-#フィールドは-200<=x<=200,
+#フィールドは-120<=x<=120,0<=y<=400
 
 class Block(object):  #ブロックのクラス
     def __init__(self,x,y,xlength,ylength):
@@ -22,14 +22,16 @@ class Block(object):  #ブロックのクラス
 
 class Controller(object):
     def __init__(self):
-        self.width = 60.0 #バーの幅[cm]
+        self.width = 100.0 #バーの幅[cm]
         self.position = 0.0 #バーの位置(x座標)[cm]
+        self.y=50.0#[cm]
         self.position_old = 0.0 #1つ前のバーの位置
         self.velocity = 0.0 #バーの移動速度[cm/s]
         self.time = time.time()
-    def calculate(self,position): #コントローラーの傾きのデータ(-1～1)からバーの位置と速度を計算する
-    	self.position_old = self.position
-    	self.position = position
+    def calculate(self,data): #コントローラーの傾きのデータ(-1～1)からバーの位置と速度を計算する
+        self.position_old = self.position
+        self.position = data[0]
+        self.width = data[1]
         time_old = self.time #経過時間を計算
         self.time = time.time()
         dlt = max(self.time - time_old,0.001)
@@ -74,8 +76,8 @@ def collision(ph_position,ph_vector,dict_block): #当たり判定函数
         disty = abs(posy-phey)
         sizesumx = sizex/2.0+phesize/2.0
         sizesumy = sizey/2.0+phesize/2.0
-        if (distx<=sizesumx):
-            if (disty<=sizesumy):
+        if (distx<sizesumx):
+            if (disty<sizesumy):
                 bt = posy+sizey/2.0
                 br = posx+sizex/2.0
                 bb = posy-sizey/2.0
@@ -88,11 +90,12 @@ def collision(ph_position,ph_vector,dict_block): #当たり判定函数
                     normalx -= 1
                 if bl<pl<br<pr: #右から
                     normalx += 1
-                if bb<pb<bt<pt: #下から
-                    normaly -= 1
-                if pb<bb<pt<bt: #上から
+                if bb<pb<bt<pt: #上から
                     normaly += 1
+                if pb<bb<pt<bt: #下から
+                    normaly -= 1
                 answer_id.append(i) #ブロックのID,法線ベクトル
+                print 'velocity before hit:',(vx,vy)
     if normalx != 0:
         vx = -vx
     if normaly != 0:
@@ -104,7 +107,7 @@ def bounce(bar,vector,position): #バーの当たり判定函数
     phesize = 18.0 #width and height of phenox
     ppx,ppy = position[0],position[1]
     vpx,vpy = vector[0],vector[1]
-    if ppy <= phesize/2.0:
+    if ppy <= bar.y+phesize/2.0 and vpy <= 0.0: #y方向の速度が負の時しか判定しない
         if abs(ppx-bar.position) <= (bar.width/2.0+phesize/2.0):
             theta = math.atan(vpx/vpy)
             limit = max(abs(theta),math.pi/4.0)
@@ -202,7 +205,6 @@ if __name__ == '__main__':
     client.setDataQueue(receive_controller,['bar_position'])
     client.setDataQueue(receive_other)
     client.start('http://192.168.1.58:8000',True) #通信開始
-    client.sendData('bar_width',['Controller'],bar.width)
     event = 'hoge'
     while True: #openingが終了するまで待つ
         while(len(receive_other)>0):
@@ -224,7 +226,7 @@ if __name__ == '__main__':
         if event == 'difficulty':
             break
     print 'receive difficulty'
-    block_dict,block_id = map_setup()
+    block_dict,block_id = map_setup(difficulty)
     tmp = to_send_map(block_dict)
     client.sendData('map',['Client'],tmp) #マップ情報送信
     #thread_Communication.client.sendData('takeoff',['Phenox'],None) #Phenoxを離陸させる
@@ -257,7 +259,8 @@ if __name__ == '__main__':
                 send_all.append(('px_position',['Client'],position))
                 answer_block = collision(position,velocity,block_dict)
                 answer_bar = bounce(bar,velocity,position)
-                if len(answer_block[0]) > 0: #ブロックに当たっていた場合法線ベクトルを送信し、クリア判定
+                if len(answer_block[0]) > 0:  #ブロックに当たっていた場合法線ベクトルを送信し、クリア判定
+                    print 'velocity after hit:',answer_block[1]
                     send_all.append(('direction',['Phenox'],answer_block[1]))
                     send_all.append(('reflect',['Client'],None))
                     velocity = answer_block[1]
@@ -267,12 +270,14 @@ if __name__ == '__main__':
                         count += 1 #ブロックを壊した個数を増やす
                         print 'hit',i
                         del block_dict[i]
+                        print block_dict.keys()
                     if len(block_dict) == 0: #クリアの場合
                         send_all.append(('complete',['Client'],count))
                         print 'complete'
                         break
                 elif answer_bar != None: #バーに当たった場合
                     send_all.append(('direction',['Phenox'],answer_bar))
+                    print 'bar hit'
                 elif gameover_judge(position) == True: #ゲームオーバーの時
                     send_all.append(('gameover',['Client'],count))
                     print 'gameover'
@@ -285,8 +290,8 @@ if __name__ == '__main__':
             elif receive_command[0] == 'px_start': #Phenoxが緊急着陸したとき
                 break
             elif receive_command[0] == 'abort': #緊急停止命令が送られてきたとき
-				send_all.append(('landing',['Phenox'],True)) #Phenoxを着陸させる
-				break
+                send_all.append(('landing',['Phenox'],True)) #Phenoxを着陸させる
+                break
     time.sleep(0.15) #コマンド送信のために少し待機
     thread_Communication.loop = False #通信ループ終了
     thread_Communication.join() #ループ終了まで待つ
